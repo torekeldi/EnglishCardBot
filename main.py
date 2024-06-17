@@ -31,7 +31,7 @@ DSN = f'{db_type}://{db_login}:{db_pass}@{db_host}:{db_port}/{db_name}'
 engine = create_engine(DSN)
 session = create_session(engine)
 
-token = '7071798660:AAHrL4J72sDLzQn_BV32YDLoA9HGSyXEQg8'
+token = 'тут ваш токен'
 state_storage = StateMemoryStorage()
 bot = TeleBot(token, state_storage=state_storage)
 

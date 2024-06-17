@@ -1,46 +1,11 @@
 from telebot import types, TeleBot, custom_filters
 from telebot.storage import StateMemoryStorage
-import sqlalchemy as sa
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy import select, union_all
 import random
 from telebot.handler_backends import State, StatesGroup
 from translate import Translator
 
-
-Base = declarative_base()
-
-
-class BotUser(Base):
-    __tablename__ = 'bot_user'
-
-    id = sa.Column(sa.Integer, primary_key=True)
-    chat_id = sa.Column(sa.Integer, unique=True, nullable=False)
-
-
-class Word(Base):
-    __tablename__ = 'word'
-
-    id = sa.Column(sa.Integer, primary_key=True)
-    en_word = sa.Column(sa.String(length=200), nullable=False)
-    ru_word = sa.Column(sa.String(length=200), nullable=False)
-    user_id = sa.Column(sa.Integer, sa.ForeignKey('bot_user.id'), nullable=True)
-    __table_args__ = (sa.UniqueConstraint('en_word', 'user_id', name='uc_user_en_word'), )
-
-    bot_user = relationship(BotUser, backref='word')
-
-
-class DelWord(Base):
-    __tablename__ = 'del_word'
-
-    id = sa.Column(sa.Integer, primary_key=True)
-    user_id = sa.Column(sa.Integer, sa.ForeignKey('bot_user.id'), nullable=False)
-    word_id = sa.Column(sa.Integer, sa.ForeignKey('word.id'), nullable=False)
-    __table_args__ = (sa.UniqueConstraint('user_id', 'word_id', name='uc_del_word_user'),)
-
-    bot_user = relationship(BotUser, backref='del_word')
-    word = relationship(Word, backref='del_word')
-
+from db_module import create_engine, create_session, BotUser, Word, DelWord
 
 db_type = input('Введите тип базы данных, например: postgresql\n')
 db_login = input('Введите пользователя базы данных\n')
@@ -63,9 +28,8 @@ if not db_name:
     db_name = 'postgres'
 
 DSN = f'{db_type}://{db_login}:{db_pass}@{db_host}:{db_port}/{db_name}'
-engine = sa.create_engine(DSN)
-Session = sessionmaker(bind=engine)
-session = Session()
+engine = create_engine(DSN)
+session = create_session(engine)
 
 token = '7071798660:AAHrL4J72sDLzQn_BV32YDLoA9HGSyXEQg8'
 state_storage = StateMemoryStorage()
@@ -96,6 +60,9 @@ def show_hint(*lines):
 
 
 def get_user_id(cid):
+
+    """Для получения идентификатора пользователя бота"""
+
     q = select(BotUser).select_from(BotUser).where(BotUser.chat_id == cid)
     r = session.execute(q).scalar()
     if r:
@@ -106,6 +73,9 @@ def get_user_id(cid):
 
 
 def get_word_id(word, user_id):
+
+    """Для получения идентификатора слова по его значению"""
+
     u = union_all(
         select(Word).select_from(Word).where(Word.en_word == word, Word.user_id == user_id),
         select(Word).select_from(Word).where(Word.en_word == word, Word.user_id == None)
@@ -120,6 +90,9 @@ def get_word_id(word, user_id):
 
 
 def add_new_word(message):
+
+    """Для добавления новых слов пользователю"""
+
     cid = message.chat.id
     uid = get_user_id(cid)
     en_word = message.text.lower().strip()
@@ -148,6 +121,9 @@ def add_new_word(message):
 
 
 def get_all_my_words(cid):
+
+    """Для получения всех заучиваемых и удаленных слов пользователя"""
+
     my_words = []
     del_words = []
     uid = get_user_id(cid)
@@ -166,6 +142,9 @@ def get_all_my_words(cid):
 
 
 def choose_words(cid):
+
+    """Для анализа показа нужных слов, то есть без удаленных и уже показанных заучиваемых слов"""
+
     other_words = []
     global shown_words
 
@@ -212,6 +191,9 @@ welcome_message = (
 
 @bot.message_handler(commands=['start'])
 def create_cards(message):
+
+    """Основная функция показа карточек со словами"""
+
     cid = message.chat.id
     uid = get_user_id(cid)
     global shown_words
@@ -263,11 +245,17 @@ def create_cards(message):
 
 @bot.message_handler(func=lambda message: message.text == Command.NEXT)
 def next_cards(message):
+
+    """Показ следующих карточек со словами"""
+
     create_cards(message)
 
 
 @bot.message_handler(func=lambda message: message.text == Command.DELETE_WORD)
 def delete_word(message):
+
+    """Для удаления слов из базы по пользователю"""
+
     cid = message.chat.id
     uid = get_user_id(cid)
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
@@ -289,12 +277,18 @@ def delete_word(message):
 
 @bot.message_handler(func=lambda message: message.text == Command.ADD_WORD)
 def add_word(message):
+
+    """Для добавления слов в базу по пользователю"""
+
     send = bot.send_message(message.chat.id, 'Введите одно слово на английском')
     bot.register_next_step_handler(send, add_new_word)
 
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def message_reply(message):
+
+    """Ответ пользователю при работе с карточками"""
+
     text = message.text
     markup = types.ReplyKeyboardMarkup(row_width=2)
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
